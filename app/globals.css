@@ -1241,28 +1241,91 @@ textarea:focus {
 
 @media (max-width: 620px) {
   .site {
-    padding: 12px 10px 36px;
+    padding: 10px 8px 32px;
+  }
+
+  .appHeader {
+    gap: 10px;
+    margin-bottom: 16px;
   }
 
   .identity strong {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .overviewBand {
-    padding: 16px;
+    gap: 12px;
+    padding: 14px;
   }
 
   h1 {
-    font-size: 28px;
+    font-size: 25px;
+    line-height: 1.08;
+  }
+
+  .overviewCopy {
+    font-size: 13px;
+    line-height: 1.35;
   }
 
   .analyticsGrid {
-    grid-template-columns: 1fr;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analyticsChip {
+    gap: 1px 7px;
+    grid-template-columns: 18px 1fr;
+    min-height: 64px;
+    padding: 9px;
+  }
+
+  .analyticsChip strong {
+    font-size: 22px;
+  }
+
+  .analyticsChip span {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .analyticsChip:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .legendBar {
+    display: grid;
+    gap: 9px 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 9px 10px;
+  }
+
+  .legendBar span {
+    font-size: 12px;
+    min-height: 28px;
+  }
+
+  .legendBar i {
+    width: 22px;
+  }
+
+  .toolbar {
+    gap: 10px;
+    padding: 10px;
   }
 
   .segmented {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .segmented button,
+  .monthControls button {
+    min-height: 44px;
+  }
+
+  .monthControls button {
+    width: 44px;
   }
 
   .monthGrid {
@@ -1278,6 +1341,10 @@ textarea:focus {
 
   .monthWeek .monthGrid {
     padding: 0;
+  }
+
+  .monthWeek .dayCell.muted {
+    display: none;
   }
 
   .rangeLayer {
@@ -1313,7 +1380,8 @@ textarea:focus {
   .dayCell {
     border: 1px solid var(--line-soft);
     border-radius: 10px;
-    min-height: 116px;
+    min-height: 108px;
+    padding: 40px 10px 10px;
   }
 
   .yearGrid,
