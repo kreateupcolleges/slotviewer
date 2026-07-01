@@ -3,6 +3,8 @@
 import { CalendarDays, LockKeyhole } from "lucide-react";
 import { FormEvent, useState } from "react";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export default function AdminLoginPage() {
   const [error, setError] = useState("");
 
@@ -17,7 +19,7 @@ export default function AdminLoginPage() {
     }
 
     window.localStorage.setItem("schedule-admin", "true");
-    window.location.href = "/admin";
+    window.location.href = `${basePath}/admin/`;
   }
 
   return (

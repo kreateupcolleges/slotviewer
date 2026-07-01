@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { SchedulePage } from "@/components/SchedulePage";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export default function AdminClient() {
   const [allowed, setAllowed] = useState(false);
 
@@ -12,7 +14,7 @@ export default function AdminClient() {
       return;
     }
 
-    window.location.replace("/admin/login");
+    window.location.replace(`${basePath}/admin/login/`);
   }, []);
 
   if (!allowed) {

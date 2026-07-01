@@ -214,6 +214,183 @@ function getViewDates(mode: ViewMode, cursor: Date, rangeStart: string, rangeEnd
   return daysBetween(start, end);
 }
 
+const storageKey = "slotviewer-schedule-state-v3";
+
+function formText(form: FormData, key: string, fallback = "") {
+  return String(form.get(key) ?? fallback).trim();
+}
+
+function formNumber(form: FormData, key: string, fallback: number) {
+  const value = Number(form.get(key));
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function normalizeAudience(value: FormDataEntryValue | null): Audience {
+  return value === "girls" || value === "mixed" ? value : "boys";
+}
+
+function normalizePriority(value: FormDataEntryValue | null): Priority {
+  return value === "high" || value === "low" ? value : "normal";
+}
+
+function createTodos(value: string, baseId = Date.now()) {
+  return value
+    .split("\n")
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label, index) => ({
+      id: baseId + index + 1,
+      label,
+      done: false,
+      sortOrder: index + 1
+    }));
+}
+
+function sortOverview(overview: Overview): Overview {
+  return {
+    trainings: [...overview.trainings].sort((a, b) => a.start_date.localeCompare(b.start_date)),
+    unavailableDates: [...overview.unavailableDates].sort((a, b) =>
+      a.unavailable_date.localeCompare(b.unavailable_date)
+    )
+  };
+}
+
+function rangeHasBlockedDate(startDate: string, endDate: string, unavailableDates: UnavailableDate[]) {
+  const range = new Set(daysBetween(startDate, endDate));
+  return unavailableDates.find((date) => range.has(date.unavailable_date));
+}
+
+function rangeHasTrainingConflict(
+  startDate: string,
+  endDate: string,
+  trainings: Training[],
+  excludeId?: number
+) {
+  const range = new Set(daysBetween(startDate, endDate));
+  return trainings.find(
+    (training) =>
+      training.id !== excludeId &&
+      training.status !== "completed" &&
+      daysBetween(training.start_date, training.end_date).some((date) => range.has(date))
+  );
+}
+
+function createSeedOverview(): Overview {
+  const today = new Date();
+  return {
+    trainings: [
+      {
+        id: 101,
+        college_name: "St. Marys College",
+        audience: "girls",
+        program_name: "Python Skill Training",
+        faculty_name: "Anika Rao",
+        coordinator_name: "Divya S",
+        coordinator_phone: "9876543210",
+        venue: "Computer Lab A",
+        faculty_count: 2,
+        participant_count: 48,
+        priority: "high",
+        start_session_label: "morning",
+        start_session_start: "09:30",
+        start_session_end: "12:30",
+        end_session_label: "afternoon",
+        end_session_start: "13:30",
+        end_session_end: "16:30",
+        start_date: toIso(addDays(today, -1)),
+        end_date: toIso(addDays(today, 4)),
+        status: "scheduled",
+        notes: "Lab access confirmed. Attendance sheet pending.",
+        sessions: [],
+        todos: createTodos("Verify lab systems\nCollect attendance\nUpload daily report", 1010)
+      },
+      {
+        id: 102,
+        college_name: "Kongu Arts College",
+        audience: "boys",
+        program_name: "Cloud Fundamentals",
+        faculty_name: "R. Nirmal",
+        coordinator_name: "Karthik P",
+        coordinator_phone: "9000012345",
+        venue: "Seminar Hall",
+        faculty_count: 3,
+        participant_count: 64,
+        priority: "normal",
+        start_session_label: "afternoon",
+        start_session_start: "13:30",
+        start_session_end: "16:30",
+        end_session_label: "morning",
+        end_session_start: "09:30",
+        end_session_end: "12:30",
+        start_date: toIso(addDays(today, 8)),
+        end_date: toIso(addDays(today, 13)),
+        status: "scheduled",
+        notes: "Confirm projector and internet availability.",
+        sessions: [],
+        todos: createTodos("Send joining instructions\nCheck trainer travel\nPrepare feedback QR", 1020)
+      },
+      {
+        id: 103,
+        college_name: "Vetri Engineering College",
+        audience: "mixed",
+        program_name: "AI Productivity Workshop",
+        faculty_name: "Meera Joseph",
+        coordinator_name: "Harini R",
+        coordinator_phone: "9444411111",
+        venue: "Innovation Lab",
+        faculty_count: 2,
+        participant_count: 52,
+        priority: "low",
+        start_session_label: "morning",
+        start_session_start: "10:00",
+        start_session_end: "12:30",
+        end_session_label: "afternoon",
+        end_session_start: "14:00",
+        end_session_end: "16:00",
+        start_date: toIso(addDays(today, -12)),
+        end_date: toIso(addDays(today, -7)),
+        status: "completed",
+        notes: "Completion marked and report submitted.",
+        sessions: [],
+        todos: createTodos("Collect attendance\nSubmit completion report", 1030).map((todo) => ({
+          ...todo,
+          done: true
+        }))
+      }
+    ],
+    unavailableDates: [
+      {
+        id: 201,
+        unavailable_date: toIso(addDays(today, 6)),
+        reason: "Campus maintenance"
+      },
+      {
+        id: 202,
+        unavailable_date: toIso(addDays(today, 17)),
+        reason: "Festival holiday"
+      }
+    ]
+  };
+}
+
+function readOverviewFromStorage() {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      const seeded = sortOverview(createSeedOverview());
+      window.localStorage.setItem(storageKey, JSON.stringify(seeded));
+      return seeded;
+    }
+    return sortOverview(JSON.parse(raw) as Overview);
+  } catch {
+    return sortOverview(createSeedOverview());
+  }
+}
+
+function writeOverviewToStorage(overview: Overview) {
+  window.localStorage.setItem(storageKey, JSON.stringify(overview));
+}
+
 export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
   const role = lockedRole;
   const [mode, setMode] = useState<ViewMode>("month");
@@ -226,14 +403,17 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function load() {
+  function saveOverview(nextOverview: Overview) {
+    const sorted = sortOverview(nextOverview);
+    setOverview(sorted);
+    writeOverviewToStorage(sorted);
+  }
+
+  function load() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/overview", { cache: "no-store" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Unable to load schedule");
-      setOverview(body);
+      setOverview(readOverviewFromStorage());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load schedule");
     } finally {
@@ -306,95 +486,204 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       .slice(0, 5);
   }, [overview.trainings]);
 
-  async function createTraining(event: FormEvent<HTMLFormElement>) {
+  function createTraining(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError("");
     const form = new FormData(event.currentTarget);
+    const target = event.currentTarget;
+    const startDate = formText(form, "startDate");
+    const endDate = formText(form, "endDate");
+    const id = Date.now();
 
-    const payload = {
-      collegeName: form.get("collegeName"),
-      audience: form.get("audience"),
-      programName: form.get("programName"),
-      facultyName: form.get("facultyName"),
-      coordinatorName: form.get("coordinatorName"),
-      coordinatorPhone: form.get("coordinatorPhone"),
-      venue: form.get("venue"),
-      facultyCount: form.get("facultyCount"),
-      participantCount: form.get("participantCount"),
-      priority: form.get("priority"),
-      startSessionLabel: form.get("startSessionLabel"),
-      startSessionStart: form.get("startSessionStart"),
-      startSessionEnd: form.get("startSessionEnd"),
-      endSessionLabel: form.get("endSessionLabel"),
-      endSessionStart: form.get("endSessionStart"),
-      endSessionEnd: form.get("endSessionEnd"),
-      startDate: form.get("startDate"),
-      endDate: form.get("endDate"),
-      notes: form.get("notes"),
-      todos: form.get("todos")
+    if (!startDate || !endDate || endDate < startDate) {
+      setError("Choose a valid start and end date.");
+      setSaving(false);
+      return;
+    }
+
+    const blockedDate = rangeHasBlockedDate(startDate, endDate, overview.unavailableDates);
+    if (blockedDate) {
+      setError(`Cannot schedule on ${formatDate(blockedDate.unavailable_date)} because it is blocked.`);
+      setSaving(false);
+      return;
+    }
+
+    const conflict = rangeHasTrainingConflict(startDate, endDate, overview.trainings);
+    if (conflict) {
+      setError(`Slot already booked by ${conflict.college_name} from ${formatDate(conflict.start_date)}.`);
+      setSaving(false);
+      return;
+    }
+
+    const nextTraining: Training = {
+      id,
+      college_name: formText(form, "collegeName"),
+      audience: normalizeAudience(form.get("audience")),
+      program_name: formText(form, "programName"),
+      faculty_name: formText(form, "facultyName"),
+      coordinator_name: formText(form, "coordinatorName"),
+      coordinator_phone: formText(form, "coordinatorPhone"),
+      venue: formText(form, "venue"),
+      faculty_count: Math.max(formNumber(form, "facultyCount", 1), 1),
+      participant_count: formNumber(form, "participantCount", 0),
+      priority: normalizePriority(form.get("priority")),
+      start_session_label: formText(form, "startSessionLabel", "morning"),
+      start_session_start: formText(form, "startSessionStart", "09:30"),
+      start_session_end: formText(form, "startSessionEnd", "12:30"),
+      end_session_label: formText(form, "endSessionLabel", "afternoon"),
+      end_session_start: formText(form, "endSessionStart", "13:30"),
+      end_session_end: formText(form, "endSessionEnd", "16:30"),
+      start_date: startDate,
+      end_date: endDate,
+      status: "scheduled",
+      notes: formText(form, "notes"),
+      sessions: [],
+      todos: createTodos(formText(form, "todos"), id)
     };
 
-    const response = await fetch("/api/trainings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+    saveOverview({
+      ...overview,
+      trainings: [...overview.trainings, nextTraining]
     });
-
-    const body = await response.json();
+    target.reset();
     setSaving(false);
-
-    if (!response.ok) {
-      setError(body.error ?? "Unable to create training");
-      return;
-    }
-
-    event.currentTarget.reset();
-    await load();
   }
 
-  async function blockDate(event: FormEvent<HTMLFormElement>) {
+  function blockDate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError("");
     const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/unavailable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: form.get("date"),
-        reason: form.get("reason")
-      })
-    });
-    const body = await response.json();
-    setSaving(false);
+    const target = event.currentTarget;
+    const date = formText(form, "date");
+    const reason = formText(form, "reason");
 
-    if (!response.ok) {
-      setError(body.error ?? "Unable to block date");
+    if (!date || !reason) {
+      setError("Choose a date and reason before blocking the slot.");
+      setSaving(false);
       return;
     }
 
-    event.currentTarget.reset();
-    await load();
+    const existingTraining = overview.trainings.find(
+      (training) => training.status !== "completed" && isWithin(date, training)
+    );
+    if (existingTraining) {
+      setError(`That date is already booked by ${existingTraining.college_name}.`);
+      setSaving(false);
+      return;
+    }
+
+    if (overview.unavailableDates.some((item) => item.unavailable_date === date)) {
+      setError("That date is already marked unavailable.");
+      setSaving(false);
+      return;
+    }
+
+    saveOverview({
+      ...overview,
+      unavailableDates: [
+        ...overview.unavailableDates,
+        {
+          id: Date.now(),
+          unavailable_date: date,
+          reason
+        }
+      ]
+    });
+    target.reset();
+    setSaving(false);
   }
 
-  async function updateTraining(payload: Record<string, unknown>) {
+  function updateTraining(payload: Record<string, unknown>) {
     setSaving(true);
     setError("");
-    const response = await fetch("/api/trainings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const body = await response.json();
-    setSaving(false);
+    const id = Number(payload.id);
+    const action = String(payload.action ?? "");
 
-    if (!response.ok) {
-      setError(body.error ?? "Unable to update training");
+    if (!id) {
+      setError("Unable to find the selected training.");
+      setSaving(false);
       return;
     }
 
-    await load();
+    if (action === "reschedule") {
+      const startDate = String(payload.startDate ?? "");
+      const endDate = String(payload.endDate ?? "");
+      if (!startDate || !endDate || endDate < startDate) {
+        setError("Choose a valid prepone/postpone date range.");
+        setSaving(false);
+        return;
+      }
+      const blockedDate = rangeHasBlockedDate(startDate, endDate, overview.unavailableDates);
+      if (blockedDate) {
+        setError(`Cannot move to ${formatDate(blockedDate.unavailable_date)} because it is blocked.`);
+        setSaving(false);
+        return;
+      }
+      const conflict = rangeHasTrainingConflict(startDate, endDate, overview.trainings, id);
+      if (conflict) {
+        setError(`That slot overlaps with ${conflict.college_name}.`);
+        setSaving(false);
+        return;
+      }
+    }
+
+    saveOverview({
+      ...overview,
+      trainings: overview.trainings.map((training) => {
+        if (training.id !== id) return training;
+
+        if (action === "complete") {
+          return { ...training, status: "completed" };
+        }
+
+        if (action === "toggleTodo") {
+          const todoId = Number(payload.todoId);
+          return {
+            ...training,
+            todos: training.todos.map((todo) =>
+              todo.id === todoId ? { ...todo, done: !todo.done } : todo
+            )
+          };
+        }
+
+        if (action === "reschedule") {
+          return {
+            ...training,
+            start_date: String(payload.startDate),
+            end_date: String(payload.endDate),
+            status: "postponed"
+          };
+        }
+
+        if (action === "edit") {
+          return {
+            ...training,
+            college_name: String(payload.collegeName ?? training.college_name),
+            program_name: String(payload.programName ?? training.program_name),
+            faculty_name: String(payload.facultyName ?? training.faculty_name),
+            coordinator_name: String(payload.coordinatorName ?? training.coordinator_name),
+            coordinator_phone: String(payload.coordinatorPhone ?? training.coordinator_phone),
+            venue: String(payload.venue ?? training.venue),
+            faculty_count: Math.max(Number(payload.facultyCount) || training.faculty_count, 1),
+            participant_count: Number(payload.participantCount) || training.participant_count,
+            priority: normalizePriority(payload.priority as FormDataEntryValue | null),
+            start_session_label: String(payload.startSessionLabel ?? training.start_session_label),
+            start_session_start: String(payload.startSessionStart ?? training.start_session_start),
+            start_session_end: String(payload.startSessionEnd ?? training.start_session_end),
+            end_session_label: String(payload.endSessionLabel ?? training.end_session_label),
+            end_session_start: String(payload.endSessionStart ?? training.end_session_start),
+            end_session_end: String(payload.endSessionEnd ?? training.end_session_end),
+            audience: normalizeAudience(payload.audience as FormDataEntryValue | null),
+            notes: String(payload.notes ?? training.notes)
+          };
+        }
+
+        return training;
+      })
+    });
+    setSaving(false);
   }
 
   return (
