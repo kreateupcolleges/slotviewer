@@ -175,15 +175,28 @@ function durationLabel(training: Training) {
   return `${daysBetween(training.start_date, training.end_date).length} days`;
 }
 
+function formatTime12(value: string) {
+  const [rawHour, rawMinute] = value.split(":").map(Number);
+  if (!Number.isFinite(rawHour) || !Number.isFinite(rawMinute)) return `${value} IST`;
+
+  const period = rawHour >= 12 ? "PM" : "AM";
+  const hour = rawHour % 12 || 12;
+  return `${String(hour).padStart(2, "0")}:${String(rawMinute).padStart(2, "0")} ${period} IST`;
+}
+
+function formatDateTime(date: string, time: string) {
+  return `${formatDate(date)}, ${formatTime12(time)}`;
+}
+
 function sessionBadge(date: string, training: Training) {
   if (date === training.start_date && date === training.end_date) {
-    return `${training.start_session_start}-${training.end_session_end}`;
+    return `${formatTime12(training.start_session_start)} - ${formatTime12(training.end_session_end)}`;
   }
   if (date === training.start_date) {
-    return `Start ${training.start_session_start}`;
+    return `Start ${formatTime12(training.start_session_start)}`;
   }
   if (date === training.end_date) {
-    return `End ${training.end_session_end}`;
+    return `End ${formatTime12(training.end_session_end)}`;
   }
   return "Full day";
 }
@@ -952,7 +965,7 @@ function MonthCalendar({
                     key={`${segment.training.id}-${segment.weekIndex}-${segment.startColumn}`}
                     style={{
                       gridColumn: `${segment.startColumn} / span ${segment.span}`,
-                      top: `${50 + segment.lane * 30}px`
+                      top: `${66 + segment.lane * 48}px`
                     }}
                   >
                     <span>{segment.training.college_name}</span>
@@ -992,11 +1005,13 @@ function buildTrainingSegments(trainings: Training[], cursor: Date) {
           lane: 0,
           status: operationalStatus(training),
           label:
-            week[start] === training.start_date
-              ? `Start ${training.start_session_start}`
-              : week[end] === training.end_date
-                ? `End ${training.end_session_end}`
-                : "Full day"
+            week[start] === training.start_date && week[end] === training.end_date
+              ? `${formatTime12(training.start_session_start)} - ${formatTime12(training.end_session_end)}`
+              : week[start] === training.start_date
+                ? `Starts ${formatTime12(training.start_session_start)}`
+                : week[end] === training.end_date
+                  ? `Ends ${formatTime12(training.end_session_end)}`
+                  : "Full-day booking"
         };
       })
       .filter(Boolean) as Array<{
@@ -1386,7 +1401,7 @@ function EditTrainingForm({
         </select>
       </label>
       <label>
-        Start time
+        Start from (IST)
         <input name="startSessionStart" type="time" defaultValue={training.start_session_start} />
       </label>
       <label>
@@ -1406,7 +1421,7 @@ function EditTrainingForm({
         <input name="endSessionStart" type="time" defaultValue={training.end_session_start} />
       </label>
       <label>
-        End time
+        End at (IST)
         <input name="endSessionEnd" type="time" defaultValue={training.end_session_end} />
       </label>
       <label className="wide">
@@ -1425,16 +1440,18 @@ function SessionPlan({ training }: { training: Training }) {
     <div className="sessionList sessionPlan">
       <span>
         <Sunrise size={14} />
-        Start day: {training.start_session_label} {training.start_session_start}-{training.start_session_end}
-      </span>
-      <span>
-        <Sun size={14} />
-        Middle days: {middleDaysCount(training) ? `${middleDaysCount(training)} full-day booking` : "None"}
+        Start: {formatDateTime(training.start_date, training.start_session_start)}
       </span>
       <span>
         <Moon size={14} />
-        End day: {training.end_session_label} {training.end_session_start}-{training.end_session_end}
+        End: {formatDateTime(training.end_date, training.end_session_end)}
       </span>
+      {middleDaysCount(training) ? (
+        <span>
+          <Sun size={14} />
+          {middleDaysCount(training)} middle day{middleDaysCount(training) > 1 ? "s" : ""} full-day
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1614,7 +1631,7 @@ function CreateTrainingForm({
             </label>
             <div className="timePair">
               <label>
-                From
+                From (IST)
                 <input name="startSessionStart" type="time" defaultValue="09:30" />
               </label>
               <label>
@@ -1639,7 +1656,7 @@ function CreateTrainingForm({
                 <input name="endSessionStart" type="time" defaultValue="13:30" />
               </label>
               <label>
-                To
+                To (IST)
                 <input name="endSessionEnd" type="time" defaultValue="16:30" />
               </label>
             </div>

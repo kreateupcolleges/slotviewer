@@ -372,6 +372,7 @@ h3 {
 .monthGrid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  position: relative;
 }
 
 .dayCell {
@@ -380,11 +381,14 @@ h3 {
   border-bottom: 1px solid var(--line-soft);
   border-right: 1px solid var(--line-soft);
   color: var(--ink);
+  display: block;
   min-height: 168px;
   overflow: hidden;
-  padding: 10px;
+  padding: 42px 10px 10px;
+  position: relative;
   text-align: left;
   transition: background 160ms ease, box-shadow 160ms ease;
+  vertical-align: top;
 }
 
 .dayCell:hover {
@@ -417,6 +421,12 @@ h3 {
   align-items: center;
   display: flex;
   justify-content: space-between;
+  left: 10px;
+  min-height: 24px;
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 3;
 }
 
 .dayTop strong {
@@ -572,36 +582,77 @@ h3 {
 }
 
 .rangeBand {
-  align-items: center;
-  border-radius: 7px;
-  box-shadow: 0 5px 14px rgba(16, 24, 40, 0.14);
-  color: white;
+  align-items: flex-start;
+  border: 1px solid transparent;
+  border-left-width: 4px;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.08);
+  color: var(--ink);
   display: flex;
-  font-size: 12px;
+  flex-direction: column;
+  font-size: 11px;
   font-weight: 780;
-  gap: 10px;
-  height: 28px;
-  justify-content: space-between;
-  margin: 0 4px;
+  gap: 2px;
+  height: 42px;
+  justify-content: center;
+  margin: 0 7px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 6px 10px;
   position: relative;
-  top: 54px;
 }
 
 .rangeBand span {
+  line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  width: 100%;
 }
 
-.rangeBand.upcoming { background: var(--upcoming); }
-.rangeBand.ongoing { background: var(--ongoing); }
-.rangeBand.completed { background: var(--completed); }
-.rangeBand.postponed { background: #4f46e5; }
-.rangeBand.past { background: var(--slate); }
+.rangeBand small {
+  color: inherit;
+  font-size: 10.5px;
+  font-weight: 760;
+  line-height: 1.15;
+  opacity: 0.78;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.rangeBand.upcoming {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.rangeBand.ongoing {
+  background: #fff7ed;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.rangeBand.completed {
+  background: #ecfdf3;
+  border-color: #16a34a;
+  color: #15803d;
+}
+
+.rangeBand.postponed {
+  background: #eef2ff;
+  border-color: #4f46e5;
+  color: #4338ca;
+}
+
+.rangeBand.past {
+  background: #f8fafc;
+  border-color: #667085;
+  color: #475467;
+}
+
 .rangeBand.priority-high {
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55), 0 6px 16px rgba(190, 18, 60, 0.28);
+  box-shadow: 0 8px 20px rgba(190, 18, 60, 0.12);
 }
 
 .dayCell em {
