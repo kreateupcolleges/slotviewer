@@ -55,6 +55,7 @@ type Training = {
   audience: Audience;
   program_name: string;
   faculty_name: string;
+  faculty_phone: string;
   coordinator_name: string;
   coordinator_phone: string;
   venue: string;
@@ -444,12 +445,16 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       return;
     }
 
+    const startSessionStart = formText(form, "startSessionStart", "09:30");
+    const endSessionEnd = formText(form, "endSessionEnd", "16:30");
+
     const nextTraining: Training = {
       id,
       college_name: formText(form, "collegeName"),
       audience: normalizeAudience(form.get("audience")),
       program_name: formText(form, "programName"),
       faculty_name: formText(form, "facultyName"),
+      faculty_phone: formText(form, "facultyPhone"),
       coordinator_name: formText(form, "coordinatorName"),
       coordinator_phone: formText(form, "coordinatorPhone"),
       venue: formText(form, "venue"),
@@ -457,11 +462,11 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       participant_count: formNumber(form, "participantCount", 0),
       priority: normalizePriority(form.get("priority")),
       start_session_label: formText(form, "startSessionLabel", "morning"),
-      start_session_start: formText(form, "startSessionStart", "09:30"),
-      start_session_end: formText(form, "startSessionEnd", "12:30"),
+      start_session_start: startSessionStart,
+      start_session_end: formText(form, "startSessionEnd", startSessionStart),
       end_session_label: formText(form, "endSessionLabel", "afternoon"),
-      end_session_start: formText(form, "endSessionStart", "13:30"),
-      end_session_end: formText(form, "endSessionEnd", "16:30"),
+      end_session_start: formText(form, "endSessionStart", endSessionEnd),
+      end_session_end: endSessionEnd,
       start_date: startDate,
       end_date: endDate,
       status: "scheduled",
@@ -673,6 +678,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
             college_name: String(payload.collegeName ?? training.college_name),
             program_name: String(payload.programName ?? training.program_name),
             faculty_name: String(payload.facultyName ?? training.faculty_name),
+            faculty_phone: String(payload.facultyPhone ?? training.faculty_phone ?? ""),
             coordinator_name: String(payload.coordinatorName ?? training.coordinator_name),
             coordinator_phone: String(payload.coordinatorPhone ?? training.coordinator_phone),
             venue: String(payload.venue ?? training.venue),
@@ -681,9 +687,9 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
             priority: normalizePriority(payload.priority as FormDataEntryValue | null),
             start_session_label: String(payload.startSessionLabel ?? training.start_session_label),
             start_session_start: String(payload.startSessionStart ?? training.start_session_start),
-            start_session_end: String(payload.startSessionEnd ?? training.start_session_end),
+            start_session_end: String(payload.startSessionEnd ?? payload.startSessionStart ?? training.start_session_end),
             end_session_label: String(payload.endSessionLabel ?? training.end_session_label),
-            end_session_start: String(payload.endSessionStart ?? training.end_session_start),
+            end_session_start: String(payload.endSessionStart ?? payload.endSessionEnd ?? training.end_session_start),
             end_session_end: String(payload.endSessionEnd ?? training.end_session_end),
             audience: normalizeAudience(payload.audience as FormDataEntryValue | null),
             notes: String(payload.notes ?? training.notes)
@@ -876,7 +882,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
                   <span className="status running">Running</span>
                 </div>
                 <strong>{activeTraining.college_name}</strong>
-                <p>{activeTraining.program_name} with {activeTraining.faculty_name}</p>
+                <p>{activeTraining.program_name} with external faculty {activeTraining.faculty_name}</p>
                 <TodoList
                   todos={activeTraining.todos}
                   onToggle={
@@ -1218,15 +1224,17 @@ function SelectedDay({
               <span className={`priority priority-${training.priority}`}>
                 {training.priority === "high" ? "High priority" : `${training.priority} priority`}
               </span>
-              <span><Users size={13} /> {training.faculty_count || 1} faculty</span>
+              <span><Users size={13} /> {training.faculty_count || 1} external faculty</span>
               <span><Users size={13} /> {training.participant_count || "Not set"} students</span>
               <span><MapPin size={13} /> {training.venue || "Venue not set"}</span>
               <span>{training.audience}</span>
               <span>{durationLabel(training)}</span>
             </div>
             <div className="detailMeta">
-              <span>{training.faculty_name}</span>
-              <span>{training.coordinator_phone || "No contact"}</span>
+              <span>{training.faculty_name || "External faculty not set"}</span>
+              <span>{training.faculty_phone || "External faculty contact not set"}</span>
+              <span>{training.coordinator_name || "BIT Coordinator not set"}</span>
+              <span>{training.coordinator_phone || "BIT contact not set"}</span>
               <span>{formatDate(training.start_date)} - {formatDate(training.end_date)}</span>
             </div>
             <SessionPlan training={training} />
@@ -1261,19 +1269,23 @@ function SelectedDay({
                   {training.participant_count || "Not set"}
                 </span>
                 <span>
-                  <strong>Faculty</strong>
+                  <strong>External Faculty</strong>
                   {training.faculty_name}
                 </span>
                 <span>
-                  <strong>Faculty count</strong>
+                  <strong>External Faculty count</strong>
                   {training.faculty_count || 1}
                 </span>
                 <span>
-                  <strong>Coordinator</strong>
+                  <strong>External Faculty Contact</strong>
+                  {training.faculty_phone || "Not set"}
+                </span>
+                <span>
+                  <strong>BIT Coordinator</strong>
                   {training.coordinator_name || "Not set"}
                 </span>
                 <span>
-                  <strong>Contact</strong>
+                  <strong>BIT Coordinator Contact</strong>
                   {training.coordinator_phone || "Not set"}
                 </span>
                 <span>
@@ -1420,6 +1432,7 @@ function EditTrainingForm({
       collegeName: form.get("collegeName"),
       programName: form.get("programName"),
       facultyName: form.get("facultyName"),
+      facultyPhone: form.get("facultyPhone"),
       coordinatorName: form.get("coordinatorName"),
       coordinatorPhone: form.get("coordinatorPhone"),
       venue: form.get("venue"),
@@ -1448,8 +1461,12 @@ function EditTrainingForm({
         <input name="programName" defaultValue={training.program_name} />
       </label>
       <label>
-        Faculty
+        External Faculty
         <input name="facultyName" defaultValue={training.faculty_name} />
+      </label>
+      <label>
+        External Faculty Contact
+        <input name="facultyPhone" defaultValue={training.faculty_phone ?? ""} />
       </label>
       <label>
         Students
@@ -1472,7 +1489,7 @@ function EditTrainingForm({
         <input name="venue" defaultValue={training.venue} />
       </label>
       <label>
-        Faculty count
+        External Faculty count
         <input name="facultyCount" min="1" type="number" defaultValue={training.faculty_count} />
       </label>
       <label>
@@ -1480,11 +1497,11 @@ function EditTrainingForm({
         <input name="participantCount" min="0" type="number" defaultValue={training.participant_count} />
       </label>
       <label>
-        Coordinator
+        BIT Coordinator
         <input name="coordinatorName" defaultValue={training.coordinator_name} />
       </label>
       <label>
-        Phone
+        BIT Coordinator Contact
         <input name="coordinatorPhone" defaultValue={training.coordinator_phone} />
       </label>
       <label>
@@ -1500,20 +1517,12 @@ function EditTrainingForm({
         <input name="startSessionStart" type="time" defaultValue={training.start_session_start} />
       </label>
       <label>
-        Start end
-        <input name="startSessionEnd" type="time" defaultValue={training.start_session_end} />
-      </label>
-      <label>
         End session
         <select name="endSessionLabel" defaultValue={training.end_session_label}>
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>
           <option value="night">Night</option>
         </select>
-      </label>
-      <label>
-        End start
-        <input name="endSessionStart" type="time" defaultValue={training.end_session_start} />
       </label>
       <label>
         End at (IST)
@@ -1653,11 +1662,15 @@ function CreateTrainingForm({
             <input name="programName" required placeholder="Skill training name" />
           </label>
           <label>
-            Faculty
-            <input name="facultyName" required placeholder="Faculty name" />
+            External Faculty
+            <input name="facultyName" required placeholder="External faculty name" />
           </label>
           <label>
-            Faculty count
+            External Faculty Contact
+            <input name="facultyPhone" placeholder="External faculty phone" />
+          </label>
+          <label>
+            External Faculty count
             <input name="facultyCount" min="1" type="number" defaultValue="1" />
           </label>
           <label>
@@ -1700,12 +1713,12 @@ function CreateTrainingForm({
             <input name="endDate" required type="date" />
           </label>
           <label>
-            Coordinator
-            <input name="coordinatorName" placeholder="College coordinator" />
+            BIT Coordinator
+            <input name="coordinatorName" placeholder="BIT coordinator name" />
           </label>
           <label>
-            Phone
-            <input name="coordinatorPhone" placeholder="Contact number" />
+            BIT Coordinator Contact
+            <input name="coordinatorPhone" placeholder="BIT coordinator phone" />
           </label>
         </div>
 
@@ -1729,10 +1742,6 @@ function CreateTrainingForm({
                 From (IST)
                 <input name="startSessionStart" type="time" defaultValue="09:30" />
               </label>
-              <label>
-                To
-                <input name="startSessionEnd" type="time" defaultValue="12:30" />
-              </label>
             </div>
           </div>
           <div className="sessionOption">
@@ -1746,10 +1755,6 @@ function CreateTrainingForm({
               </select>
             </label>
             <div className="timePair">
-              <label>
-                From
-                <input name="endSessionStart" type="time" defaultValue="13:30" />
-              </label>
               <label>
                 To (IST)
                 <input name="endSessionEnd" type="time" defaultValue="16:30" />
