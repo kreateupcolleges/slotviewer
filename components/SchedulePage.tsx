@@ -1230,6 +1230,80 @@ function SelectedDay({
               <span>{formatDate(training.start_date)} - {formatDate(training.end_date)}</span>
             </div>
             <SessionPlan training={training} />
+            <details className="fullDetailsDrawer">
+              <summary>
+                <Eye size={16} />
+                View full details
+              </summary>
+              <div className="fullDetailsGrid">
+                <span>
+                  <strong>College</strong>
+                  {training.college_name}
+                </span>
+                <span>
+                  <strong>Training</strong>
+                  {training.program_name}
+                </span>
+                <span>
+                  <strong>Status</strong>
+                  {statusLabel(operationalStatus(training))}
+                </span>
+                <span>
+                  <strong>Priority</strong>
+                  {training.priority}
+                </span>
+                <span>
+                  <strong>Audience</strong>
+                  {training.audience}
+                </span>
+                <span>
+                  <strong>Participants</strong>
+                  {training.participant_count || "Not set"}
+                </span>
+                <span>
+                  <strong>Faculty</strong>
+                  {training.faculty_name}
+                </span>
+                <span>
+                  <strong>Faculty count</strong>
+                  {training.faculty_count || 1}
+                </span>
+                <span>
+                  <strong>Coordinator</strong>
+                  {training.coordinator_name || "Not set"}
+                </span>
+                <span>
+                  <strong>Contact</strong>
+                  {training.coordinator_phone || "Not set"}
+                </span>
+                <span>
+                  <strong>Venue</strong>
+                  {training.venue || "Not set"}
+                </span>
+                <span>
+                  <strong>Duration</strong>
+                  {durationLabel(training)}
+                </span>
+                <span>
+                  <strong>Start</strong>
+                  {formatDateTime(training.start_date, training.start_session_start)}
+                </span>
+                <span>
+                  <strong>End</strong>
+                  {formatDateTime(training.end_date, training.end_session_end)}
+                </span>
+                <span className="wide">
+                  <strong>Notes</strong>
+                  {training.notes || "No notes added"}
+                </span>
+                <span className="wide">
+                  <strong>Checklist</strong>
+                  {training.todos.length
+                    ? training.todos.map((todo) => `${todo.done ? "Done" : "Pending"}: ${todo.label}`).join(" | ")
+                    : "No checklist added"}
+                </span>
+              </div>
+            </details>
             {training.todos.length ? (
               <TodoList
                 todos={training.todos}
