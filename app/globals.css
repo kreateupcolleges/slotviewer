@@ -260,6 +260,7 @@ h3 {
 .legendUpcoming { background: var(--upcoming); }
 .legendRunning { background: var(--ongoing); }
 .legendCompleted { background: var(--completed); }
+.legendCancelled { background: var(--priority); }
 .legendBlocked { background: var(--blocked); }
 
 .mainGrid {
@@ -409,6 +410,7 @@ h3 {
 .dayCell.postponed,
 .dayCell.ongoing,
 .dayCell.completed,
+.dayCell.cancelled,
 .dayCell.past {
   background: var(--surface);
 }
@@ -486,6 +488,12 @@ h3 {
   color: #4f46e5;
 }
 
+.dayCell.cancelled .dayTop span,
+.status.cancelled {
+  background: #fff1f2;
+  color: var(--priority);
+}
+
 .dayCell.past .dayTop span,
 .status.past {
   background: #f2f4f7;
@@ -496,6 +504,7 @@ h3 {
 .monthWeek .dayCell.ongoing .dayTop span,
 .monthWeek .dayCell.completed .dayTop span,
 .monthWeek .dayCell.postponed .dayTop span,
+.monthWeek .dayCell.cancelled .dayTop span,
 .monthWeek .dayCell.past .dayTop span {
   display: none;
 }
@@ -521,6 +530,15 @@ h3 {
 
 .monthWeek .dayCell.completed .dayTop::after {
   background: var(--completed);
+  border-radius: 999px;
+  content: "";
+  height: 7px;
+  opacity: 0.8;
+  width: 7px;
+}
+
+.monthWeek .dayCell.cancelled .dayTop::after {
+  background: var(--priority);
   border-radius: 999px;
   content: "";
   height: 7px;
@@ -566,6 +584,7 @@ h3 {
 .eventPill.ongoing { background: var(--ongoing); }
 .eventPill.completed { background: var(--completed); }
 .eventPill.postponed { background: #4f46e5; }
+.eventPill.cancelled { background: var(--priority); }
 .eventPill.past { background: var(--slate); }
 
 .monthWeek .eventPill {
@@ -643,6 +662,12 @@ h3 {
   background: #eef2ff;
   border-color: #4f46e5;
   color: #4338ca;
+}
+
+.rangeBand.cancelled {
+  background: #fff1f2;
+  border-color: var(--priority);
+  color: var(--priority);
 }
 
 .rangeBand.past {
@@ -904,7 +929,8 @@ h3 {
 
 .adminActions button,
 .rescheduleForm button,
-.editForm button {
+.editForm button,
+.blockedEditForm button {
   align-items: center;
   background: var(--ink);
   border: 0;
@@ -916,6 +942,15 @@ h3 {
   justify-content: center;
   min-height: 38px;
   padding: 0 12px;
+}
+
+.adminActions button.warningAction {
+  background: #b45309;
+}
+
+.adminActions button.dangerAction,
+.blockedEditForm button.dangerAction {
+  background: var(--blocked);
 }
 
 .editDrawer {
@@ -1106,15 +1141,40 @@ textarea:focus {
   padding-top: 14px;
 }
 
-.blockedList span {
+.blockedItem {
   background: var(--blocked-soft);
   border: 1px solid #fecdca;
   border-radius: 8px;
   color: var(--blocked);
   display: grid;
   font-size: 13px;
-  gap: 2px;
+  gap: 10px;
   padding: 9px;
+}
+
+.blockedItem > div {
+  display: grid;
+  gap: 2px;
+}
+
+.blockedEditForm {
+  display: grid;
+  gap: 8px;
+}
+
+.blockedEditForm label {
+  color: var(--text);
+}
+
+.blockedEditForm button {
+  min-height: 36px;
+}
+
+.emptyMini {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  margin: 0;
 }
 
 .loginShell {
@@ -1360,6 +1420,7 @@ textarea:focus {
   .monthWeek .dayCell.ongoing .dayTop span,
   .monthWeek .dayCell.completed .dayTop span,
   .monthWeek .dayCell.postponed .dayTop span,
+  .monthWeek .dayCell.cancelled .dayTop span,
   .monthWeek .dayCell.past .dayTop span {
     display: inline-block;
   }
@@ -1369,6 +1430,7 @@ textarea:focus {
   .monthWeek .dayCell.ongoing .dayTop::after,
   .monthWeek .dayCell.completed .dayTop::after,
   .monthWeek .dayCell.postponed .dayTop::after,
+  .monthWeek .dayCell.cancelled .dayTop::after,
   .monthWeek .dayCell.past .dayTop::after {
     display: none;
   }

@@ -21,7 +21,9 @@ import {
   Sun,
   Sunrise,
   MapPin,
+  Trash2,
   Users,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -29,8 +31,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Role = "viewer" | "admin";
 type ViewMode = "month" | "year" | "range";
 type Audience = "boys" | "girls" | "mixed";
-type TrainingStatus = "scheduled" | "running" | "completed" | "postponed";
-type OperationalStatus = "ongoing" | "upcoming" | "completed" | "postponed" | "past";
+type TrainingStatus = "scheduled" | "running" | "completed" | "postponed" | "cancelled";
+type OperationalStatus = "ongoing" | "upcoming" | "completed" | "postponed" | "cancelled" | "past";
 type Priority = "low" | "normal" | "high";
 
 type TrainingSession = {
@@ -154,6 +156,7 @@ function isWithin(iso: string, training: Training) {
 
 function operationalStatus(training: Training, today = toIso(new Date())): OperationalStatus {
   if (training.status === "completed") return "completed";
+  if (training.status === "cancelled") return "cancelled";
   if (training.status === "postponed") return "postponed";
   if (today >= training.start_date && today <= training.end_date) return "ongoing";
   if (today < training.start_date) return "upcoming";
@@ -166,6 +169,7 @@ function statusLabel(status: OperationalStatus) {
     upcoming: "Upcoming",
     completed: "Completed",
     postponed: "Rescheduled",
+    cancelled: "Cancelled",
     past: "Past due"
   };
   return labels[status];
@@ -227,7 +231,7 @@ function getViewDates(mode: ViewMode, cursor: Date, rangeStart: string, rangeEnd
   return daysBetween(start, end);
 }
 
-const storageKey = "slotviewer-schedule-state-v3";
+const storageKey = "slotviewer-schedule-state-v4";
 
 function formText(form: FormData, key: string, fallback = "") {
   return String(form.get(key) ?? fallback).trim();
@@ -284,105 +288,15 @@ function rangeHasTrainingConflict(
     (training) =>
       training.id !== excludeId &&
       training.status !== "completed" &&
+      training.status !== "cancelled" &&
       daysBetween(training.start_date, training.end_date).some((date) => range.has(date))
   );
 }
 
 function createSeedOverview(): Overview {
-  const today = new Date();
   return {
-    trainings: [
-      {
-        id: 101,
-        college_name: "St. Marys College",
-        audience: "girls",
-        program_name: "Python Skill Training",
-        faculty_name: "Anika Rao",
-        coordinator_name: "Divya S",
-        coordinator_phone: "9876543210",
-        venue: "Computer Lab A",
-        faculty_count: 2,
-        participant_count: 48,
-        priority: "high",
-        start_session_label: "morning",
-        start_session_start: "09:30",
-        start_session_end: "12:30",
-        end_session_label: "afternoon",
-        end_session_start: "13:30",
-        end_session_end: "16:30",
-        start_date: toIso(addDays(today, -1)),
-        end_date: toIso(addDays(today, 4)),
-        status: "scheduled",
-        notes: "Lab access confirmed. Attendance sheet pending.",
-        sessions: [],
-        todos: createTodos("Verify lab systems\nCollect attendance\nUpload daily report", 1010)
-      },
-      {
-        id: 102,
-        college_name: "Kongu Arts College",
-        audience: "boys",
-        program_name: "Cloud Fundamentals",
-        faculty_name: "R. Nirmal",
-        coordinator_name: "Karthik P",
-        coordinator_phone: "9000012345",
-        venue: "Seminar Hall",
-        faculty_count: 3,
-        participant_count: 64,
-        priority: "normal",
-        start_session_label: "afternoon",
-        start_session_start: "13:30",
-        start_session_end: "16:30",
-        end_session_label: "morning",
-        end_session_start: "09:30",
-        end_session_end: "12:30",
-        start_date: toIso(addDays(today, 8)),
-        end_date: toIso(addDays(today, 13)),
-        status: "scheduled",
-        notes: "Confirm projector and internet availability.",
-        sessions: [],
-        todos: createTodos("Send joining instructions\nCheck trainer travel\nPrepare feedback QR", 1020)
-      },
-      {
-        id: 103,
-        college_name: "Vetri Engineering College",
-        audience: "mixed",
-        program_name: "AI Productivity Workshop",
-        faculty_name: "Meera Joseph",
-        coordinator_name: "Harini R",
-        coordinator_phone: "9444411111",
-        venue: "Innovation Lab",
-        faculty_count: 2,
-        participant_count: 52,
-        priority: "low",
-        start_session_label: "morning",
-        start_session_start: "10:00",
-        start_session_end: "12:30",
-        end_session_label: "afternoon",
-        end_session_start: "14:00",
-        end_session_end: "16:00",
-        start_date: toIso(addDays(today, -12)),
-        end_date: toIso(addDays(today, -7)),
-        status: "completed",
-        notes: "Completion marked and report submitted.",
-        sessions: [],
-        todos: createTodos("Collect attendance\nSubmit completion report", 1030).map((todo) => ({
-          ...todo,
-          done: true
-        }))
-      }
-    ],
-    unavailableDates: [
-      {
-        id: 201,
-        unavailable_date: toIso(addDays(today, 6)),
-        reason: "Campus maintenance"
-      },
-      {
-        id: 202,
-        unavailable_date: toIso(addDays(today, 17)),
-        reason: "Festival holiday"
-      }
-    ]
+    trainings: [],
+    unavailableDates: []
   };
 }
 
@@ -485,7 +399,8 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       upcoming: 1,
       postponed: 2,
       past: 3,
-      completed: 4
+      cancelled: 4,
+      completed: 5
     };
     const priorityRank: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
     return [...overview.trainings]
@@ -608,6 +523,75 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
     setSaving(false);
   }
 
+  function updateUnavailableDate(payload: Record<string, unknown>) {
+    setSaving(true);
+    setError("");
+    const id = Number(payload.id);
+    const action = String(payload.action ?? "");
+
+    if (!id) {
+      setError("Unable to find the blocked date.");
+      setSaving(false);
+      return;
+    }
+
+    if (action === "deleteUnavailable") {
+      saveOverview({
+        ...overview,
+        unavailableDates: overview.unavailableDates.filter((date) => date.id !== id)
+      });
+      setSaving(false);
+      return;
+    }
+
+    if (action === "editUnavailable") {
+      const date = String(payload.date ?? "");
+      const reason = String(payload.reason ?? "").trim();
+
+      if (!date || !reason) {
+        setError("Choose a blocked date and reason before saving.");
+        setSaving(false);
+        return;
+      }
+
+      const existingTraining = overview.trainings.find(
+        (training) => training.status !== "completed" && training.status !== "cancelled" && isWithin(date, training)
+      );
+      if (existingTraining) {
+        setError(`That date is already booked by ${existingTraining.college_name}.`);
+        setSaving(false);
+        return;
+      }
+
+      const duplicate = overview.unavailableDates.find(
+        (item) => item.id !== id && item.unavailable_date === date
+      );
+      if (duplicate) {
+        setError("That date is already marked unavailable.");
+        setSaving(false);
+        return;
+      }
+
+      saveOverview({
+        ...overview,
+        unavailableDates: overview.unavailableDates.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                unavailable_date: date,
+                reason
+              }
+            : item
+        )
+      });
+      setSaving(false);
+      return;
+    }
+
+    setError("Choose a valid blocked-date action.");
+    setSaving(false);
+  }
+
   function updateTraining(payload: Record<string, unknown>) {
     setSaving(true);
     setError("");
@@ -616,6 +600,15 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
 
     if (!id) {
       setError("Unable to find the selected training.");
+      setSaving(false);
+      return;
+    }
+
+    if (action === "delete") {
+      saveOverview({
+        ...overview,
+        trainings: overview.trainings.filter((training) => training.id !== id)
+      });
       setSaving(false);
       return;
     }
@@ -649,6 +642,10 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
 
         if (action === "complete") {
           return { ...training, status: "completed" };
+        }
+
+        if (action === "cancel") {
+          return { ...training, status: "cancelled" };
         }
 
         if (action === "toggleTodo") {
@@ -751,6 +748,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
         <span><i className="legendUpcoming" /> Upcoming</span>
         <span><i className="legendRunning" /> Ongoing</span>
         <span><i className="legendCompleted" /> Completed</span>
+        <span><i className="legendCancelled" /> Cancelled</span>
         <span><i className="legendBlocked" /> Blocked</span>
       </section>
 
@@ -905,6 +903,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
             unavailableDates={overview.unavailableDates}
             saving={saving}
             onSubmit={blockDate}
+            onUpdate={updateUnavailableDate}
           />
         </section>
       ) : null}
@@ -1250,12 +1249,21 @@ function SelectedDay({
             {role === "admin" ? (
               <div className="adminActions">
                 <button
-                  disabled={saving || training.status === "completed"}
+                  disabled={saving || training.status === "completed" || training.status === "cancelled"}
                   type="button"
                   onClick={() => onUpdate({ id: training.id, action: "complete" })}
                 >
                   <CheckCircle2 size={16} />
                   Mark completed
+                </button>
+                <button
+                  className="warningAction"
+                  disabled={saving || training.status === "cancelled"}
+                  type="button"
+                  onClick={() => onUpdate({ id: training.id, action: "cancel" })}
+                >
+                  <XCircle size={16} />
+                  Cancel schedule
                 </button>
                 <details className="editDrawer">
                   <summary>
@@ -1265,6 +1273,19 @@ function SelectedDay({
                   <EditTrainingForm training={training} saving={saving} onUpdate={onUpdate} />
                 </details>
                 <RescheduleForm training={training} saving={saving} onUpdate={onUpdate} />
+                <button
+                  className="dangerAction"
+                  disabled={saving}
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Delete ${training.college_name} schedule permanently?`)) {
+                      onUpdate({ id: training.id, action: "delete" });
+                    }
+                  }}
+                >
+                  <Trash2 size={16} />
+                  Delete schedule
+                </button>
               </div>
             ) : null}
           </article>
@@ -1692,12 +1713,25 @@ function CreateTrainingForm({
 function BlockDateForm({
   unavailableDates,
   saving,
-  onSubmit
+  onSubmit,
+  onUpdate
 }: {
   unavailableDates: UnavailableDate[];
   saving: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (payload: Record<string, unknown>) => void;
 }) {
+  function editBlockedDate(event: FormEvent<HTMLFormElement>, id: number) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    onUpdate({
+      id,
+      action: "editUnavailable",
+      date: form.get("date"),
+      reason: form.get("reason")
+    });
+  }
+
   return (
     <section className="panel formPanel compact">
       <div className="panelHead">
@@ -1721,12 +1755,44 @@ function BlockDateForm({
         </button>
       </form>
       <div className="blockedList">
-        {unavailableDates.map((date) => (
-          <span key={date.id}>
-            <strong>{formatDate(date.unavailable_date)}</strong>
-            {date.reason}
-          </span>
-        ))}
+        {unavailableDates.length ? (
+          unavailableDates.map((date) => (
+            <article className="blockedItem" key={date.id}>
+              <div>
+                <strong>{formatDate(date.unavailable_date)}</strong>
+                <span>{date.reason}</span>
+              </div>
+              <form className="blockedEditForm" onSubmit={(event) => editBlockedDate(event, date.id)}>
+                <label>
+                  Date
+                  <input name="date" required type="date" defaultValue={date.unavailable_date} />
+                </label>
+                <label>
+                  Reason
+                  <input name="reason" required defaultValue={date.reason} />
+                </label>
+                <button disabled={saving} type="submit">
+                  Save
+                </button>
+                <button
+                  className="dangerAction"
+                  disabled={saving}
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Delete blocked date ${formatDate(date.unavailable_date)}?`)) {
+                      onUpdate({ id: date.id, action: "deleteUnavailable" });
+                    }
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Delete
+                </button>
+              </form>
+            </article>
+          ))
+        ) : (
+          <p className="emptyMini">No blocked dates yet.</p>
+        )}
       </div>
     </section>
   );
