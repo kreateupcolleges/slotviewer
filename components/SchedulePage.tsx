@@ -25,6 +25,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
+import { neon } from "@neondatabase/serverless";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -233,6 +234,9 @@ function getViewDates(mode: ViewMode, cursor: Date, rangeStart: string, rangeEnd
 }
 
 const storageKey = "slotviewer-schedule-state-v4";
+const sharedStateId = "production";
+const databaseUrl = process.env.NEXT_PUBLIC_DATABASE_URL ?? "";
+let databaseClient: ReturnType<typeof neon> | null = null;
 
 function formText(form: FormData, key: string, fallback = "") {
   return String(form.get(key) ?? fallback).trim();
@@ -273,6 +277,30 @@ function sortOverview(overview: Overview): Overview {
   };
 }
 
+function normalizeOverview(value: unknown): Overview {
+  const source = (value ?? {}) as Partial<Overview>;
+  const trainings = Array.isArray(source.trainings) ? source.trainings : [];
+  const unavailableDates = Array.isArray(source.unavailableDates) ? source.unavailableDates : [];
+
+  return sortOverview({
+    trainings: trainings.map((training) => ({
+      ...(training as Training),
+      faculty_phone: (training as Partial<Training>).faculty_phone ?? "",
+      sessions: Array.isArray((training as Partial<Training>).sessions)
+        ? (training as Training).sessions
+        : [],
+      todos: Array.isArray((training as Partial<Training>).todos)
+        ? (training as Training).todos
+        : []
+    })),
+    unavailableDates: unavailableDates as UnavailableDate[]
+  });
+}
+
+function hasScheduleData(overview: Overview) {
+  return overview.trainings.length > 0 || overview.unavailableDates.length > 0;
+}
+
 function rangeHasBlockedDate(startDate: string, endDate: string, unavailableDates: UnavailableDate[]) {
   const range = new Set(daysBetween(startDate, endDate));
   return unavailableDates.find((date) => range.has(date.unavailable_date));
@@ -301,22 +329,77 @@ function createSeedOverview(): Overview {
   };
 }
 
-function readOverviewFromStorage() {
+function readOverviewFromLocalStorage() {
   try {
     const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
-      const seeded = sortOverview(createSeedOverview());
-      window.localStorage.setItem(storageKey, JSON.stringify(seeded));
-      return seeded;
-    }
-    return sortOverview(JSON.parse(raw) as Overview);
+    if (!raw) return null;
+    return normalizeOverview(JSON.parse(raw));
   } catch {
-    return sortOverview(createSeedOverview());
+    return null;
   }
 }
 
 function writeOverviewToStorage(overview: Overview) {
   window.localStorage.setItem(storageKey, JSON.stringify(overview));
+}
+
+function getDatabaseClient() {
+  if (!databaseUrl) return null;
+  databaseClient ??= neon(databaseUrl);
+  return databaseClient;
+}
+
+async function writeOverviewToSharedStore(overview: Overview) {
+  const sorted = sortOverview(overview);
+  const sql = getDatabaseClient();
+
+  if (!sql) {
+    writeOverviewToStorage(sorted);
+    return sorted;
+  }
+
+  await sql`
+    INSERT INTO slotviewer_state (id, payload, version, updated_at)
+    VALUES (${sharedStateId}, ${JSON.stringify(sorted)}::jsonb, 1, now())
+    ON CONFLICT (id) DO UPDATE
+    SET payload = EXCLUDED.payload,
+        version = slotviewer_state.version + 1,
+        updated_at = now()
+  `;
+  writeOverviewToStorage(sorted);
+  return sorted;
+}
+
+async function readOverviewFromSharedStore() {
+  const localOverview = readOverviewFromLocalStorage();
+  const sql = getDatabaseClient();
+
+  if (!sql) {
+    return localOverview ?? sortOverview(createSeedOverview());
+  }
+
+  const rows = (await sql`
+    SELECT payload
+    FROM slotviewer_state
+    WHERE id = ${sharedStateId}
+    LIMIT 1
+  `) as Array<{ payload: unknown }>;
+
+  const remoteOverview = rows[0]?.payload ? normalizeOverview(rows[0].payload) : null;
+
+  if ((!remoteOverview || !hasScheduleData(remoteOverview)) && localOverview && hasScheduleData(localOverview)) {
+    return writeOverviewToSharedStore(localOverview);
+  }
+
+  const overview = remoteOverview ?? sortOverview(createSeedOverview());
+
+  if (!remoteOverview) {
+    await writeOverviewToSharedStore(overview);
+  } else {
+    writeOverviewToStorage(overview);
+  }
+
+  return overview;
 }
 
 export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
@@ -331,17 +414,16 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  function saveOverview(nextOverview: Overview) {
-    const sorted = sortOverview(nextOverview);
+  async function saveOverview(nextOverview: Overview) {
+    const sorted = await writeOverviewToSharedStore(nextOverview);
     setOverview(sorted);
-    writeOverviewToStorage(sorted);
   }
 
-  function load() {
+  async function load() {
     setLoading(true);
     setError("");
     try {
-      setOverview(readOverviewFromStorage());
+      setOverview(await readOverviewFromSharedStore());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load schedule");
     } finally {
@@ -350,7 +432,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
   }
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
   const unavailableMap = useMemo(() => {
@@ -415,7 +497,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       .slice(0, 5);
   }, [overview.trainings]);
 
-  function createTraining(event: FormEvent<HTMLFormElement>) {
+  async function createTraining(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError("");
@@ -475,15 +557,19 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       todos: createTodos(formText(form, "todos"), id)
     };
 
-    saveOverview({
-      ...overview,
-      trainings: [...overview.trainings, nextTraining]
-    });
-    target.reset();
+    try {
+      await saveOverview({
+        ...overview,
+        trainings: [...overview.trainings, nextTraining]
+      });
+      target.reset();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save training");
+    }
     setSaving(false);
   }
 
-  function blockDate(event: FormEvent<HTMLFormElement>) {
+  async function blockDate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError("");
@@ -513,22 +599,26 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       return;
     }
 
-    saveOverview({
-      ...overview,
-      unavailableDates: [
-        ...overview.unavailableDates,
-        {
-          id: Date.now(),
-          unavailable_date: date,
-          reason
-        }
-      ]
-    });
-    target.reset();
+    try {
+      await saveOverview({
+        ...overview,
+        unavailableDates: [
+          ...overview.unavailableDates,
+          {
+            id: Date.now(),
+            unavailable_date: date,
+            reason
+          }
+        ]
+      });
+      target.reset();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save blocked date");
+    }
     setSaving(false);
   }
 
-  function updateUnavailableDate(payload: Record<string, unknown>) {
+  async function updateUnavailableDate(payload: Record<string, unknown>) {
     setSaving(true);
     setError("");
     const id = Number(payload.id);
@@ -541,10 +631,14 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
     }
 
     if (action === "deleteUnavailable") {
-      saveOverview({
-        ...overview,
-        unavailableDates: overview.unavailableDates.filter((date) => date.id !== id)
-      });
+      try {
+        await saveOverview({
+          ...overview,
+          unavailableDates: overview.unavailableDates.filter((date) => date.id !== id)
+        });
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Unable to delete blocked date");
+      }
       setSaving(false);
       return;
     }
@@ -577,18 +671,22 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
         return;
       }
 
-      saveOverview({
-        ...overview,
-        unavailableDates: overview.unavailableDates.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                unavailable_date: date,
-                reason
-              }
-            : item
-        )
-      });
+      try {
+        await saveOverview({
+          ...overview,
+          unavailableDates: overview.unavailableDates.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  unavailable_date: date,
+                  reason
+                }
+              : item
+          )
+        });
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Unable to update blocked date");
+      }
       setSaving(false);
       return;
     }
@@ -597,7 +695,7 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
     setSaving(false);
   }
 
-  function updateTraining(payload: Record<string, unknown>) {
+  async function updateTraining(payload: Record<string, unknown>) {
     setSaving(true);
     setError("");
     const id = Number(payload.id);
@@ -610,10 +708,14 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
     }
 
     if (action === "delete") {
-      saveOverview({
-        ...overview,
-        trainings: overview.trainings.filter((training) => training.id !== id)
-      });
+      try {
+        await saveOverview({
+          ...overview,
+          trainings: overview.trainings.filter((training) => training.id !== id)
+        });
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Unable to delete training");
+      }
       setSaving(false);
       return;
     }
@@ -640,65 +742,69 @@ export function SchedulePage({ lockedRole }: { lockedRole: Role }) {
       }
     }
 
-    saveOverview({
-      ...overview,
-      trainings: overview.trainings.map((training) => {
-        if (training.id !== id) return training;
+    try {
+      await saveOverview({
+        ...overview,
+        trainings: overview.trainings.map((training) => {
+          if (training.id !== id) return training;
 
-        if (action === "complete") {
-          return { ...training, status: "completed" };
-        }
+          if (action === "complete") {
+            return { ...training, status: "completed" };
+          }
 
-        if (action === "cancel") {
-          return { ...training, status: "cancelled" };
-        }
+          if (action === "cancel") {
+            return { ...training, status: "cancelled" };
+          }
 
-        if (action === "toggleTodo") {
-          const todoId = Number(payload.todoId);
-          return {
-            ...training,
-            todos: training.todos.map((todo) =>
-              todo.id === todoId ? { ...todo, done: !todo.done } : todo
-            )
-          };
-        }
+          if (action === "toggleTodo") {
+            const todoId = Number(payload.todoId);
+            return {
+              ...training,
+              todos: training.todos.map((todo) =>
+                todo.id === todoId ? { ...todo, done: !todo.done } : todo
+              )
+            };
+          }
 
-        if (action === "reschedule") {
-          return {
-            ...training,
-            start_date: String(payload.startDate),
-            end_date: String(payload.endDate),
-            status: "postponed"
-          };
-        }
+          if (action === "reschedule") {
+            return {
+              ...training,
+              start_date: String(payload.startDate),
+              end_date: String(payload.endDate),
+              status: "postponed"
+            };
+          }
 
-        if (action === "edit") {
-          return {
-            ...training,
-            college_name: String(payload.collegeName ?? training.college_name),
-            program_name: String(payload.programName ?? training.program_name),
-            faculty_name: String(payload.facultyName ?? training.faculty_name),
-            faculty_phone: String(payload.facultyPhone ?? training.faculty_phone ?? ""),
-            coordinator_name: String(payload.coordinatorName ?? training.coordinator_name),
-            coordinator_phone: String(payload.coordinatorPhone ?? training.coordinator_phone),
-            venue: String(payload.venue ?? training.venue),
-            faculty_count: Math.max(Number(payload.facultyCount) || training.faculty_count, 1),
-            participant_count: Number(payload.participantCount) || training.participant_count,
-            priority: normalizePriority(payload.priority as FormDataEntryValue | null),
-            start_session_label: String(payload.startSessionLabel ?? training.start_session_label),
-            start_session_start: String(payload.startSessionStart ?? training.start_session_start),
-            start_session_end: String(payload.startSessionEnd ?? payload.startSessionStart ?? training.start_session_end),
-            end_session_label: String(payload.endSessionLabel ?? training.end_session_label),
-            end_session_start: String(payload.endSessionStart ?? payload.endSessionEnd ?? training.end_session_start),
-            end_session_end: String(payload.endSessionEnd ?? training.end_session_end),
-            audience: normalizeAudience(payload.audience as FormDataEntryValue | null),
-            notes: String(payload.notes ?? training.notes)
-          };
-        }
+          if (action === "edit") {
+            return {
+              ...training,
+              college_name: String(payload.collegeName ?? training.college_name),
+              program_name: String(payload.programName ?? training.program_name),
+              faculty_name: String(payload.facultyName ?? training.faculty_name),
+              faculty_phone: String(payload.facultyPhone ?? training.faculty_phone ?? ""),
+              coordinator_name: String(payload.coordinatorName ?? training.coordinator_name),
+              coordinator_phone: String(payload.coordinatorPhone ?? training.coordinator_phone),
+              venue: String(payload.venue ?? training.venue),
+              faculty_count: Math.max(Number(payload.facultyCount) || training.faculty_count, 1),
+              participant_count: Number(payload.participantCount) || training.participant_count,
+              priority: normalizePriority(payload.priority as FormDataEntryValue | null),
+              start_session_label: String(payload.startSessionLabel ?? training.start_session_label),
+              start_session_start: String(payload.startSessionStart ?? training.start_session_start),
+              start_session_end: String(payload.startSessionEnd ?? payload.startSessionStart ?? training.start_session_end),
+              end_session_label: String(payload.endSessionLabel ?? training.end_session_label),
+              end_session_start: String(payload.endSessionStart ?? payload.endSessionEnd ?? training.end_session_start),
+              end_session_end: String(payload.endSessionEnd ?? training.end_session_end),
+              audience: normalizeAudience(payload.audience as FormDataEntryValue | null),
+              notes: String(payload.notes ?? training.notes)
+            };
+          }
 
-        return training;
-      })
-    });
+          return training;
+        })
+      });
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to update training");
+    }
     setSaving(false);
   }
 
